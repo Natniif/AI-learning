@@ -29,6 +29,7 @@ script_dir = os.path.dirname(os.path.abspath(__file__))
 class Config(): 
 	epochs = 3
 	batch_size = 32
+	save_epoch = 1
 
 def setup_data(dataset):
 	# Define transformations including normalization
@@ -58,6 +59,20 @@ def setup_data(dataset):
 # -------- TRAIN LOOP --------
 import torch.optim as optim 
 
+def save_checkpoint(state, filename): 
+	checkpoint_dir = os.path.join(script_dir, filename)
+	torch.save(state, checkpoint_dir)
+
+# TODO: Implement into train, test and infer calls
+def load_checkpoint(filename, model, optimizer): 
+	checkpoint_dir = os.path.join(script_dir, filename)
+	checkpoint = torch.load(filename)
+	model.load_state_dict(checkpoint['model_state_dict'])
+	optimizer.load_stat_dict(checkpoint['optimizer_state_dict'])
+	epoch = checkpoint['epoch']
+	loss = checkpoint['loss']
+	return epoch, loss
+
 def train(model, loss_fn, optimizer, trainset, trainloader, testset, testloader, use_compile=False): 
 
 	model.to(device_type)
@@ -65,7 +80,7 @@ def train(model, loss_fn, optimizer, trainset, trainloader, testset, testloader,
 		model = torch.compile(model)
 
 	for epoch in range(Config.epochs):
-		print(f"Epoch: {epoch}\n-----")
+		print(f"Epoch: {epoch} / {Config.epochs}\n-----")
 		train_loss = 0
 
 		model.train()
@@ -80,14 +95,17 @@ def train(model, loss_fn, optimizer, trainset, trainloader, testset, testloader,
 			optimizer.step()
 
 			train_loss += loss
+			if batch % 10 == 0: 
+				print(f"Train loss: {train_loss/batch}")
 
 		train_loss /= len(trainset)
 
 		model.eval()
 		test_loss = 0
-		with torch.inference_mode(): 
+		with torch.no_grad(): 
 			for x, y in testloader: 
 				x = x.to(device_type)
+				y = y.to(device_type)
 				
 				test_pred = model(x)
 				loss = loss_fn(test_pred, y)
@@ -96,6 +114,17 @@ def train(model, loss_fn, optimizer, trainset, trainloader, testset, testloader,
 		test_loss /= len(testset)
 
 		print(f"\nTrain loss: {train_loss:.5f} | Test loss: {test_loss:.5f}\n")
+
+		if epoch % Config.save_epoch: 
+			print("Saving checkpoint...")
+
+			checkpoint = {
+				'epoch': epoch,
+				'model_state_dict': model.state_dict(),
+				'optimizer_state_dict': optimizer.state_dict(),
+				'loss': loss,
+			}
+			save_checkpoint(checkpoint, filename=f'checkpoint_epoch_{epoch}.pth.tar')
 
 	print("Training Complete")
 
@@ -166,17 +195,27 @@ if __name__ == "__main__":
 
 	parser.add_argument('--model', '-m', type=str, required=True, help="Name of model")
 	parser.add_argument('--dataset', '-d', type=str, required=False, default="cifar10", help="Dataset used")
+	parser.add_argument('--pretrained', '-p', type=bool, required=False)
 	parser.add_argument('--run', '-r', type=str, help="What type of run to do. e.g. test, train, infer")
 	parser.add_argument('--save', '-s', type=str, required=False, help="Name of the model you want to save")
 	args = parser.parse_args()
 
 	loaders = setup_data('CIFAR10')
 
-	models = {
-		'alexnet' : AlexNet(10), 
-		'resnet18' : ResNet18(10),
-		'resnet50' : ResNet50(10)
-	}
+	if args.pretrained == True:
+		# TODO: implement pretrained and non-pretrained into all models
+		models = {
+			'alexnet' : AlexNet(10, pretrained=True), 
+			'resnet18' : ResNet18(10),
+			'resnet50' : ResNet50(10)
+		}
+	else: 
+		models = {
+			'alexnet' : AlexNet(10), 
+			'resnet18' : ResNet18(10),
+			'resnet50' : ResNet50(10)
+		}
+
 
 	model = models[args.model]
 
