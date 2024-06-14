@@ -9,6 +9,7 @@ import torch
 import torch.nn as nn
 from torch.nn import functional as F
 from torch.utils.data import DataLoader
+import torch.optim as optim 
 import torchvision
 import torchvision.transforms as transforms
 from tqdm.auto import tqdm
@@ -25,11 +26,13 @@ else:
 torch.manual_seed(123)
 script_dir = os.path.dirname(os.path.abspath(__file__))
 
+
 @dataclass
 class Config(): 
 	epochs = 3
 	batch_size = 32
 	save_epoch = 1
+	accumulation_steps = 4
 
 def setup_data(dataset):
 	# Define transformations including normalization
@@ -57,21 +60,28 @@ def setup_data(dataset):
 
 
 # -------- TRAIN LOOP --------
-import torch.optim as optim 
 
 def save_checkpoint(state, filename): 
-	checkpoint_dir = os.path.join(script_dir, filename)
+	if "weights" not in os.listdir(script_dir): 
+		os.makedirs("weights")
+
+	checkpoint_dir = os.path.join(script_dir, "weights", filename)
 	torch.save(state, checkpoint_dir)
 
 # TODO: Implement into train, test and infer calls
-def load_checkpoint(filename, model, optimizer): 
+def load_checkpoint(filename, model, optimizer, infer_mode=False): 
 	checkpoint_dir = os.path.join(script_dir, filename)
 	checkpoint = torch.load(filename)
 	model.load_state_dict(checkpoint['model_state_dict'])
-	optimizer.load_stat_dict(checkpoint['optimizer_state_dict'])
 	epoch = checkpoint['epoch']
 	loss = checkpoint['loss']
-	return epoch, loss
+
+	if infer_mode == False: 
+		optimizer.load_stat_dict(checkpoint['optimizer_state_dict'])
+		return model, loss, optimizer, epoch, 
+	else: 
+		return model, loss, epoch
+
 
 def train(model, loss_fn, optimizer, trainset, trainloader, testset, testloader, use_compile=False): 
 
@@ -88,11 +98,12 @@ def train(model, loss_fn, optimizer, trainset, trainloader, testset, testloader,
 			x = x.to(device_type)
 			y = y.to(device_type)
 
-			optimizer.zero_grad()
 			y_pred = model(x)
 			loss = loss_fn(y_pred, y)
 			loss.backward()
-			optimizer.step()
+			if (batch + 1) % Config.accumulation_steps:
+				optimizer.step()
+				optimizer.zero_grad()
 
 			train_loss += loss
 			if batch % 10 == 0: 
@@ -127,6 +138,7 @@ def train(model, loss_fn, optimizer, trainset, trainloader, testset, testloader,
 			save_checkpoint(checkpoint, filename=f'checkpoint_epoch_{epoch}.pth.tar')
 
 	print("Training Complete")
+
 
 def save_model(model, model_path_name):
     weights_dir = os.path.join(os.path.dirname(__file__), 'weights')
@@ -164,7 +176,13 @@ def test(testset, model, from_pretrained=False, model_pth="", use_compile=True):
 
 
 # -------- INFERENCE --------
-def infer(model, dataset, load_weights=False): 
+def infer(model, dataset, filename="", from_pretrained=False, load_weights=False): 
+
+	if from_pretrained == True: 
+		checkpoint_path = os.path.join(script_dir, "weights", filename)
+		checkpoint = load_checkpoint(checkpoint_path, infer_mode=True)
+		model = checkpoint[0]
+
 	with torch.inference_mode():
 		if load_weights == False: 
 			idx = random.randint(0, len(dataset) - 1)
@@ -187,6 +205,7 @@ def infer(model, dataset, load_weights=False):
 		else: 
 			return("Not implemented yet")
 
+
 # -------- MAIN --------
 if __name__ == "__main__": 
 	import argparse
@@ -206,16 +225,17 @@ if __name__ == "__main__":
 		# TODO: implement pretrained and non-pretrained into all models
 		models = {
 			'alexnet' : AlexNet(10, pretrained=True), 
+			'googlenet' : GoogLeNet(10, pretrained=True),
 			'resnet18' : ResNet18(10),
 			'resnet50' : ResNet50(10)
 		}
 	else: 
 		models = {
 			'alexnet' : AlexNet(10), 
+			'googlenet' : GoogLeNet(10),
 			'resnet18' : ResNet18(10),
 			'resnet50' : ResNet50(10)
 		}
-
 
 	model = models[args.model]
 
