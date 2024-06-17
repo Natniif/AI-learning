@@ -226,15 +226,15 @@ if __name__ == "__main__":
 		models = {
 			'alexnet' : AlexNet(10, pretrained=True), 
 			'googlenet' : GoogLeNet(10, pretrained=True),
-			'resnet18' : ResNet18(10),
-			'resnet50' : ResNet50(10)
+			'resnet18' : ResNet(size='18',num_classes=10),
+			'resnet50' : ResNet(size='50',num_classes=10)
 		}
 	else: 
 		models = {
 			'alexnet' : AlexNet(10), 
 			'googlenet' : GoogLeNet(10),
-			'resnet18' : ResNet18(10),
-			'resnet50' : ResNet50(10)
+			'resnet18' : ResNet(size='18',num_classes=10),
+			'resnet50' : ResNet(size='50',num_classes=10)
 		}
 
 	model = models[args.model]
